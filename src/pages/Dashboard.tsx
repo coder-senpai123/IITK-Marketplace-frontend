@@ -22,8 +22,15 @@ const Dashboard = () => {
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await API.get("/items");
-      setItems(data);
+      const { data } = await API.get(`/items?_=${Date.now()}`);
+      const fetched = (data.data || []).filter((i: any) => i.seller);
+
+      fetched.sort(
+        (a: any, b: any) =>
+          new Date(b.createdAt).getTime() -
+          new Date(a.createdAt).getTime()
+      );
+      setItems(fetched);
     } catch {
       toast.error("Failed to load items");
     } finally {
@@ -35,10 +42,11 @@ const Dashboard = () => {
     fetchItems();
   }, [fetchItems]);
 
-  const handleChat = async (sellerId: string) => {
+  const handleChat = async (itemId: string) => {
     try {
-      const { data } = await API.post("/chats", { userId: sellerId });
-      navigate(`/chats/${data._id}`);
+      const res = await API.post("/chats", { itemId });
+
+      navigate(`/chats/${res.data.data._id}`);
     } catch {
       toast.error("Failed to start chat");
     }
@@ -97,11 +105,10 @@ const Dashboard = () => {
               <button
                 key={cat}
                 onClick={() => setCategory(cat)}
-                className={`rounded-full px-4 py-1.5 text-xs font-medium transition-all ${
-                  category === cat
-                    ? "campus-gradient text-primary-foreground"
-                    : "border border-border bg-card text-muted-foreground hover:border-ring hover:text-foreground"
-                }`}
+                className={`rounded-full px-4 py-1.5 text-xs font-medium transition-all ${category === cat
+                  ? "campus-gradient text-primary-foreground"
+                  : "border border-border bg-card text-muted-foreground hover:border-ring hover:text-foreground"
+                  }`}
               >
                 {cat}
               </button>
@@ -129,7 +136,7 @@ const Dashboard = () => {
                 item={item}
                 onChat={
                   item.seller?._id !== user?._id
-                    ? () => handleChat(item.seller._id)
+                    ? () => handleChat(item._id)
                     : undefined
                 }
               />

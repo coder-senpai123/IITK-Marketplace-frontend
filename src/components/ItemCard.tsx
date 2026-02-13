@@ -9,7 +9,7 @@ interface ItemCardProps {
     condition: string;
     location: string;
     images: string[];
-    seller?: { name: string; _id: string };
+    seller?: { name: string; email?: string; _id: string };
   };
   onChat?: () => void;
   onClick?: () => void;
@@ -27,7 +27,7 @@ const ItemCard = ({ item, onChat, onClick }: ItemCardProps) => {
   const imgSrc = item.images?.[0]
     ? item.images[0].startsWith("http")
       ? item.images[0]
-      : `http://localhost:5000/${item.images[0]}`
+      : `${import.meta.env.VITE_BACKEND_URL || "http://localhost:5000"}/${item.images[0]}`
     : "/placeholder.svg";
 
   return (
@@ -59,9 +59,16 @@ const ItemCard = ({ item, onChat, onClick }: ItemCardProps) => {
           {item.category} · {item.location}
         </p>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            {item.seller?.name || "Seller"}
-          </span>
+          <div className="flex flex-col">
+            <span className="text-xs font-medium text-card-foreground">
+              {item.seller?.name || "Seller"}
+            </span>
+            {item.seller?.email && (
+              <span className="text-[11px] text-muted-foreground">
+                {item.seller.email}
+              </span>
+            )}
+          </div>
           {onChat && (
             <button
               onClick={(e) => {

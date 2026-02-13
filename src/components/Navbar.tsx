@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { LogOut, MessageCircle, PlusCircle, Store, Menu, X } from "lucide-react";
+import { LogOut, MessageCircle, PlusCircle, Store, Menu, X, LayoutDashboard } from "lucide-react";
 import { useState } from "react";
 
 const Navbar = () => {
@@ -47,8 +47,14 @@ const Navbar = () => {
               >
                 <MessageCircle className="h-4 w-4" /> Chats
               </Link>
+              <Link
+                to="/my-dashboard"
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <LayoutDashboard className="h-4 w-4" /> My Dashboard
+              </Link>
               <div className="mx-2 h-6 w-px bg-border" />
-              <span className="text-sm font-medium text-foreground">{user?.name}</span>
+              <span className="text-sm font-medium text-foreground">{user?.email}</span>
               <button
                 onClick={handleLogout}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
@@ -88,6 +94,7 @@ const Navbar = () => {
               <Link to="/dashboard" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted">Browse</Link>
               <Link to="/sell" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted">Sell Item</Link>
               <Link to="/chats" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted">Chats</Link>
+              <Link to="/my-dashboard" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted">My Dashboard</Link>
               <button onClick={() => { handleLogout(); setMobileOpen(false); }} className="rounded-lg px-3 py-2 text-left text-sm font-medium text-destructive hover:bg-destructive/10">Logout</button>
             </div>
           ) : (
