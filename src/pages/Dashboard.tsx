@@ -42,14 +42,8 @@ const Dashboard = () => {
     fetchItems();
   }, [fetchItems]);
 
-  const handleChat = async (itemId: string) => {
-    try {
-      const res = await API.post("/chats", { itemId });
-
-      navigate(`/chats/${res.data.data._id}`);
-    } catch {
-      toast.error("Failed to start chat");
-    }
+  const handleChat = (itemId: string) => {
+    navigate(`/chats/item/${itemId}`);
   };
 
   const filtered = items

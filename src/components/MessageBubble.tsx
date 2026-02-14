@@ -61,6 +61,10 @@ const MessageBubble = ({
 
   // FILE / PDF MESSAGE
   if (type === "file" && fileUrl) {
+    // Use backend proxy to download raw Cloudinary files with correct headers
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+    const downloadUrl = `${backendUrl}/api/chats/download?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName || "document")}`;
+
     return (
       <div className={`flex ${isMine ? "justify-end" : "justify-start"} mb-2`}>
         <div className={`${bubbleBase} ${bubbleColor}`}>
@@ -68,12 +72,12 @@ const MessageBubble = ({
             <p className="mb-1 text-xs font-semibold opacity-70">{senderName}</p>
           )}
           <a
-            href={fileUrl}
+            href={downloadUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${isMine
-                ? "border-primary-foreground/20 hover:bg-primary-foreground/10"
-                : "border-border hover:bg-background"
+            className={`flex items-center gap-3 rounded-lg border p-3 transition-colors w-full text-left ${isMine
+              ? "border-primary-foreground/20 hover:bg-primary-foreground/10"
+              : "border-border hover:bg-background"
               }`}
           >
             <div

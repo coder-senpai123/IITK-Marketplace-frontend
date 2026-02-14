@@ -11,7 +11,7 @@ import { Send, ArrowLeft, Paperclip, X, Image as ImageIcon, FileText } from "luc
 import { Chat } from "@/types/chat";
 
 const Chats = () => {
-  const { chatId } = useParams();
+  const { chatId, itemId } = useParams();
   const { user } = useAuth();
   const { socketRef } = useSocket();
   const navigate = useNavigate();
@@ -23,7 +23,65 @@ const Chats = () => {
   const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showSidebar, setShowSidebar] = useState(!chatId);
+  const [showSidebar, setShowSidebar] = useState(!chatId && !itemId);
+
+  // Pending item info (when opening a chat via /chats/item/:itemId)
+  const [pendingItem, setPendingItem] = useState<any>(null);
+  const [loadingPendingItem, setLoadingPendingItem] = useState(false);
+
+  // Check if this is a pending (not-yet-created) chat
+  const isPending = !!itemId && !chatId;
+
+  // Fetch the item info when we have an itemId (pending chat)
+  useEffect(() => {
+    if (!itemId) { setPendingItem(null); return; }
+    const fetchItem = async () => {
+      setLoadingPendingItem(true);
+      try {
+        const { data } = await API.get(`/items/${itemId}`);
+        setPendingItem(data.data);
+      } catch {
+        toast.error("Failed to load item details");
+      } finally {
+        setLoadingPendingItem(false);
+      }
+    };
+
+    // Check if there's already an existing chat for this item
+    const checkExistingChat = async () => {
+      try {
+        const { data } = await API.get("/chats");
+        const existingChats: Chat[] = Array.isArray(data.data) ? data.data : [];
+        const existing = existingChats.find(
+          (c: Chat) => c.item?._id === itemId
+        );
+        if (existing) {
+          // Already have a chat for this item, redirect to it
+          navigate(`/chats/${existing._id}`, { replace: true });
+          return;
+        }
+      } catch {
+        // Ignore — we'll just show the pending UI
+      }
+      fetchItem();
+    };
+
+    checkExistingChat();
+  }, [itemId, navigate]);
+
+  // Listen for chat_created from server (lazy creation redirect)
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    const handler = (data: { chatId: string; itemId: string }) => {
+      if (data.itemId === itemId) {
+        navigate(`/chats/${data.chatId}`, { replace: true });
+      }
+    };
+    socket.on("chat_created", handler);
+    return () => { socket.off("chat_created", handler); };
+  }, [itemId, socketRef, navigate]);
 
   // Join chat room + listen for messages
   useEffect(() => {
@@ -89,19 +147,23 @@ const Chats = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Send text
+  // Send text — works for both existing chats and pending item chats
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !chatId || !socketRef.current) return;
+    if (!newMessage.trim() || !socketRef.current) return;
+
+    const targetId = chatId || itemId;
+    if (!targetId) return;
+
     const content = newMessage.trim();
     setNewMessage("");
-    socketRef.current.emit("send_message", { chatId, content, type: "text" });
+    socketRef.current.emit("send_message", { chatId: targetId, content, type: "text" });
   };
 
   // Upload file then send via socket
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !chatId) return;
+    if (!file) return;
 
     // Reset input
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -111,6 +173,47 @@ const Chats = () => {
       toast.error("File size must be under 5 MB");
       return;
     }
+
+    // For pending chats, we need to create the chat first via a text-like flow
+    if (isPending && itemId) {
+      // For file uploads on pending chats, first create the chat by sending
+      // a message via socket (which triggers lazy creation), then upload
+      setUploading(true);
+      try {
+        // Create chat lazily by sending a placeholder, then the file
+        // Actually, we need a real chatId for the upload endpoint.
+        // So let's create the chat via API first.
+        const chatRes = await API.post("/chats", { itemId });
+        const realChatId = chatRes.data.data._id;
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const { data } = await API.post(`/chats/${realChatId}/upload`, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        const fileMeta = data.data;
+
+        socketRef.current?.emit("send_message", {
+          chatId: realChatId,
+          content: fileMeta.type === "image" ? "📷 Image" : `📎 ${fileMeta.fileName}`,
+          type: fileMeta.type,
+          fileUrl: fileMeta.fileUrl,
+          fileName: fileMeta.fileName,
+          mimeType: fileMeta.mimeType,
+        });
+
+        navigate(`/chats/${realChatId}`, { replace: true });
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || "File upload failed");
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+
+    if (!chatId) return;
 
     setUploading(true);
     try {
@@ -140,16 +243,24 @@ const Chats = () => {
 
   const selectChat = (id: string) => navigate(`/chats/${id}`);
 
+  // Determine active chat info — either from loaded chats or from pending item
   const activeChat = chats.find((c) => c._id === chatId);
   const otherUser = activeChat?.participants?.filter(
     (u: any) => String(u._id) !== String(user?._id)
   )[0];
-  const chatItem = activeChat?.item;
+
+  // For pending chats, use item data from the pendingItem
+  const chatItem = isPending ? pendingItem : activeChat?.item;
   const isReadOnly = chatItem?.status === "deleted";
+
+  const pendingSellerEmail = isPending ? pendingItem?.seller?.email : null;
+  const displayOtherUserEmail = isPending ? pendingSellerEmail : (otherUser?.email || "Unknown");
 
   const itemImgSrc = chatItem?.images?.[0]
     ? (chatItem.images[0].startsWith("http") ? chatItem.images[0] : `${import.meta.env.VITE_BACKEND_URL || "http://localhost:5000"}/${chatItem.images[0]}`)
     : null;
+
+  const showMessagePanel = !!chatId || isPending;
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -173,7 +284,7 @@ const Chats = () => {
 
         {/* Message panel */}
         <div className={`${!showSidebar ? "flex" : "hidden"} flex-1 flex-col md:flex`}>
-          {chatId ? (
+          {showMessagePanel ? (
             <>
               {/* Header with item context */}
               <div
@@ -184,37 +295,46 @@ const Chats = () => {
                   <ArrowLeft className="h-5 w-5 text-foreground" />
                 </button>
 
-                {itemImgSrc ? (
-                  <img src={itemImgSrc} alt={chatItem?.title} className="h-10 w-10 rounded-lg object-cover" />
+                {loadingPendingItem ? (
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 animate-pulse rounded-lg bg-muted" />
+                    <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                  </div>
                 ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                    <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                )}
+                  <>
+                    {itemImgSrc ? (
+                      <img src={itemImgSrc} alt={chatItem?.title} className="h-10 w-10 rounded-lg object-cover" />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    )}
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="line-clamp-1 text-sm font-semibold text-card-foreground">
-                      {chatItem?.title || "Chat"}
-                    </p>
-                    {chatItem?.status === "sold" && (
-                      <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
-                        SOLD
-                      </span>
-                    )}
-                    {chatItem?.status === "deleted" && (
-                      <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">
-                        DELETED
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {chatItem?.price && (
-                      <span className="font-medium text-accent">₹{chatItem.price.toLocaleString("en-IN")}</span>
-                    )}
-                    <span>• {otherUser?.email || "Unknown"}</span>
-                  </div>
-                </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="line-clamp-1 text-sm font-semibold text-card-foreground">
+                          {chatItem?.title || "Chat"}
+                        </p>
+                        {chatItem?.status === "sold" && (
+                          <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
+                            SOLD
+                          </span>
+                        )}
+                        {chatItem?.status === "deleted" && (
+                          <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">
+                            DELETED
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {chatItem?.price && (
+                          <span className="font-medium text-accent">₹{chatItem.price.toLocaleString("en-IN")}</span>
+                        )}
+                        <span>• {displayOtherUserEmail}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Messages */}
